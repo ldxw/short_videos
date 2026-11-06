@@ -1,0 +1,65 @@
+name: 新平台支持 / New platform
+description: 请求接入一个新的短视频或 AI 视频平台
+title: "[Platform] "
+labels: ["enhancement", "platform"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        新平台接入成本主要在「分享链接 → 作品 ID → 详情接口」这条链路上，
+        下面的信息越完整，评估越快。
+
+  - type: input
+    id: name
+    attributes:
+      label: 平台名称
+      placeholder: 视频号 / 西瓜视频 / …
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: 示例分享链接
+      description: 至少三条不同类型的公开链接（视频、图集、实况或分 P）。链接公开即可，不要贴私有内容。
+      placeholder: |
+        https://...
+        https://...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: login
+    attributes:
+      label: 是否需要登录
+      options:
+        - 免登录即可拿到详情
+        - 需要 Cookie / 签名参数
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: response
+    attributes:
+      label: 已知的返回结构
+      description: 若已抓到详情接口的返回，请贴脱敏后的 JSON 片段，并标注哪些字段对应统一契约里的 url / cover / author / images。
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充说明
+      description: 反爬强度、签名算法（如 a_bogus / X-Bogus）、是否需要代理、是否有地区限制等。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: 参与意愿
+      options:
+        - label: 我可以提供抓包样本
+        - label: 我愿意实现解析器并提交 PR

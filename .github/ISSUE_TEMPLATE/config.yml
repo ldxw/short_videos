@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 接口演示 / 在线试用
+    url: https://api.bugpk.com/
+    about: 先用官方演示站确认链接本身能不能解析，再判断是不是本仓库的问题。
+  - name: 使用问题与讨论
+    url: https://github.com/jiuhunwl/short_videos/discussions
+    about: 部署、环境配置、平台风控这类开放性问题请走 Discussions。

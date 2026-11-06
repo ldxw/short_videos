@@ -1,0 +1,34 @@
+name: 冒烟测试
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: 接口链路冒烟
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: curl, json, mbstring
+          coverage: none
+
+      # 只断言本机链路与契约，不发解析请求；health.php 会真实探测各平台域名，
+      # 结果只用于填 online 字段，断言不依赖它，因此上游风控不影响本作业。
+      - name: 运行冒烟测试
+        run: php .github/scripts/smoke-parse.php

@@ -1,0 +1,102 @@
+name: 问题反馈 / Bug report
+description: 解析失败、返回结构异常、页面显示错误等
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先确认：这条链接在官方演示站 <https://api.bugpk.com/> 上能不能解析。
+        单个链接失效多半是平台风控或内容已删除，不是代码缺陷。
+
+  - type: checkboxes
+    id: precheck
+    attributes:
+      label: 提交前自查
+      options:
+        - label: 已搜索现有 issue，没有重复
+          required: true
+        - label: 已确认 PHP 版本 ≥ 8.0，且 curl、json 扩展已启用
+          required: true
+        - label: 已在官方演示站交叉验证过同一条链接
+          required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题范围
+      options:
+        - 单平台解析接口（api/<平台>/…）
+        - 聚合接口 api/sv.php
+        - 网页解析页面 index.html
+        - 聚合接口 api/parse.php / api/media.php
+        - 健康检查 api/health.php
+        - Cloudflare Workers 版
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: 涉及平台
+      placeholder: 抖音 / 快手 / 小红书 / B 站 / 微博 / 头条 / 皮皮虾 / 皮皮搞笑 / 最右 / 豆包 / 即梦
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 运行环境
+      description: PHP 版本、Web 服务器、部署方式（宝塔 / Docker / 虚拟主机 / 内置服务器）
+      placeholder: PHP 8.2.14 / Nginx 1.24 / 宝塔面板
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 给出能复现的最短路径，含完整请求 URL（可直接放示例链接，不必是私有链接）
+      placeholder: |
+        1. 请求 GET /api/douyin/douyin.php?url=https://v.douyin.com/xxxxxx/
+        2. 返回 code=500
+        3. 重复三次均失败
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+      placeholder: 返回 code=200，data.url 为可播放的 mp4 直链
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 贴原始响应体，不要只描述现象。若报 403/412，请注明是沙箱 IP 还是生产 IP。
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 错误日志 / 截图
+      description: PHP 错误日志、浏览器 Console、Network 面板都可以。大段日志请截取关键行。
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: 部署的 tag、分支或 commit 短哈希
+      placeholder: main @ 253d832
+    validations:
+      required: false
