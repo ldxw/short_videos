@@ -21,6 +21,7 @@
     <a href="#-支持平台">支持平台</a> •
     <a href="#-项目结构">项目结构</a> •
     <a href="#-安装部署">安装部署</a> •
+    <a href="#-网页解析页面">网页解析页面</a> •
     <a href="#-使用说明">使用说明</a> •
     <a href="#-接口文档">接口文档</a> •
     <a href="#-贡献指南">贡献指南</a> •
@@ -128,14 +129,24 @@ short_videos/
 │   ├── pipigx.php / ppxia.php      # 皮皮搞笑 / 皮皮虾解析
 │   ├── zuiyou.php                  # 最右解析
 │   ├── sv.php                      # 聚合解析（自动识别平台，转发单平台接口）
+│   ├── parse.php                   # 聚合解析（页面专用，进程内调用，无需自请求）
+│   ├── media.php                   # 媒体代理 / 下载转发（Referer、Range、DNS 固定）
+│   ├── health.php                  # 接口健康检查（域名可达性 + 最近解析结果）
+│   ├── lib/                        # parse.php 的平台路由与统一 JSON 归一化
 │   ├── wyy.py                      # 网易云音乐解析（Python/Flask）
 │   └── svproxyurl.php              # 视频直链 403 代理
+├── index.html                      # 网页解析页面（原生实现，无构建，深/浅主题）
 ├── cf_sv_proxy/                    # 403 代理（Cloudflare Workers 版，含部署文档）
 ├── img/                            # 文档图片资源
 ├── docs/                           # 规范文档
 │   ├── 视频解析统一JSON格式3.0.md    #   统一 JSON 格式规范（中文）
 │   └── Unified-Video-Parsing-JSON-Format-3.0.md   #   同上（English）
+├── .github/                        # issue / PR 模板，CI（php -l、冒烟测试、链接检查）
 ├── README.md / README_EN.md        # 项目文档
+├── CONTRIBUTING.md                 # 贡献指南（开发环境、代码风格、提交规范）
+├── SECURITY.md                     # 安全策略与漏洞报告方式
+├── CHANGELOG.md                    # 变更日志
+├── .editorconfig / .gitattributes  # 编辑器与换行符约定
 └── LICENSE                         # MIT 许可证
 ```
 
@@ -165,6 +176,97 @@ cd short_videos
 ### 3. 抖音 Workers 版（可选）
 
 如需部署在 Cloudflare Workers 上，进入 `api/douyin-cloudflare workers/` 查看 [README](api/douyin-cloudflare%20workers/README.md)，粘贴 `workers.js` 部署即可。
+
+---
+
+## 🖥 网页解析页面
+
+仓库根目录的 `index.html` 是一个开箱即用的解析页面，配上 `api/parse.php` 与 `api/media.php` 两个接口即可使用。与 `api/sv.php` 的区别是：**不做 HTTP 自请求**，直接在各平台解析器所在进程内调用，因此不需要配置本站域名，CLI、内网、反向代理环境都能跑。
+
+| 文件 | 作用 |
+|------|------|
+| `index.html` | 解析页面（原生 HTML/CSS/JS，无构建步骤，支持深色 / 浅色主题） |
+| `api/parse.php` | 聚合解析：识别平台 → 进程内调用单平台解析器 → 归一化为[统一 JSON 格式 3.0](docs/视频解析统一JSON格式3.0.md) |
+| `api/health.php` | 接口健康检查：各平台域名可达性 + 最近一次解析结果 |
+| `api/lib/PlatformRouter.php` | 平台识别、进程内 include 入口、公网 URL 校验、解析结果留痕 |
+| `api/lib/Normalizer.php` | 各平台返回结构 → 统一 JSON 契约（含 B 站 `auther`/`videos`、微博 `time`、头条 `itemId` 等差异字段） |
+| `api/media.php` | 媒体代理与下载转发：补平台 Referer 解 403，支持 Range，固定 DNS 防重绑定 |
+
+把整个目录放到站点根目录即可，入口 `index.html`，要求 PHP 8.0+（curl、json 扩展）：
+
+```bash
+php -S 127.0.0.1:8099 -t .
+# 浏览器打开 http://127.0.0.1:8099/
+```
+
+接口调用：
+
+```bash
+# 聚合解析（GET / POST / JSON body 均可，支持整段分享文案）
+curl "http://localhost:8099/api/parse.php?url=https://v.douyin.com/xxxx/"
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"url":"https://www.bilibili.com/video/BV1xx411c7mD"}' \
+     http://localhost:8099/api/parse.php
+
+# 媒体代理（播放 / 下载，直链 403 时用）
+curl -o out.mp4 "http://localhost:8099/api/media.php?url=<直链>&platform=douyin&download=1&name=标题.mp4"
+```
+
+`api/parse.php` 在统一契约之外多返回 `platform` 与 `platform_label` 两个字段，业务状态码沿用平台语义（`200` 成功、`201` 不支持的平台、`400/404/500` 失败）。`api/media.php` 的可代理域名白名单在文件顶部 `$allowedSuffixes` 维护，留空表示不限制域名但仍强制公网校验，部署到公网时建议按需增删。
+
+#### 主题
+
+右上角图标切换深色 / 浅色，选择写入 `localStorage`（键 `duanqie_theme_v1`）；未选择过时跟随系统 `prefers-color-scheme`。两套主题共用同一份组件样式，只在 `:root` 与 `html[data-theme="light"]` 里换 CSS 变量，正文与辅助文字均满足 WCAG AA（4.5:1）。
+
+#### 接口健康检查
+
+页面加载时与每 2 分钟（仅前台标签页）调用一次 `api/health.php`，顶栏 pill 显示可用平台数，平台 chip 显示各自状态：
+
+- **绿点**：平台域名可达，且最近一次真实解析成功
+- **红点**：平台不可达（超时 / DNS 失败 / 5xx），或最近一次解析返回非 200
+- **灰点**：尚未检测
+
+```bash
+# 全部平台
+curl "http://localhost:8099/api/health.php"
+
+# 单个平台（跳过 60 秒缓存）
+curl "http://localhost:8099/api/health.php?platform=douyin"
+```
+
+响应：
+
+```json
+{
+  "code": 200,
+  "msg": "ok",
+  "data": {
+    "service": "ok",
+    "missing": [],
+    "cached": false,
+    "checkedAt": "2026-11-07T06:12:17+08:00",
+    "summary": { "online": 9, "total": 11 },
+    "platforms": [
+      {
+        "platform": "douyin",
+        "label": "抖音",
+        "entry": true,
+        "online": true,
+        "latency": 2169,
+        "status": 404,
+        "reason": "",
+        "last": { "code": 403, "time": "2026-11-06T22:04:27+00:00", "ok": false }
+      }
+    ]
+  }
+}
+```
+
+`online` 只表示平台域名能正常握手（4xx 也算可达，说明链路是通的）；`last` 是 `parse.php` 最近一次真实解析的业务码。**两者要一起看**——平台风控会让域名照常 200 而解析持续失败，只看 `online` 会误判成健康。结果缓存 60 秒，写在系统临时目录，多实例部署时各自独立。
+
+11 个平台的域名探测走 `curl_multi` 并发，冷缓存耗时约等于最慢的那一个平台（实测 1.6~2.0 秒），不会随平台数量线性增长；单平台探测（`?platform=`）仍是一次独立请求，不写缓存。
+
+`service` 为 `degraded` 表示本机入口文件缺失或未启用 curl，见 `missing` 数组。
 
 ---
 
@@ -287,13 +389,20 @@ curl "https://你的服务器地址/api/sv.php?url=https://v.douyin.com/xxxx/"
 
 ## 🤝 贡献指南
 
-欢迎贡献代码！请随时提交 Issue 和 Pull Request。
+欢迎提交 Issue 与 Pull Request。完整的开发环境、代码风格、提交信息规范见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全相关的问题请按 [SECURITY.md](SECURITY.md) 的渠道私下报告。
 
 1. Fork 本仓库
 2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+3. 提交更改，提交信息用 Conventional Commits (`git commit -m 'feat(parse): 新增 XX 平台解析'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+5. 开启 Pull Request，按模板填写验证方式
+
+提交前可以本地跑一遍 CI 同款检查：
+
+```bash
+find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+php .github/scripts/smoke-parse.php
+```
 
 ---
 

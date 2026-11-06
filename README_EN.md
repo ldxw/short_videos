@@ -21,6 +21,7 @@
     <a href="#-supported-platforms">Platforms</a> •
     <a href="#-project-structure">Structure</a> •
     <a href="#-installation">Installation</a> •
+    <a href="#-web-parse-page">Web Page</a> •
     <a href="#-usage">Usage</a> •
     <a href="#-api-reference">API Reference</a> •
     <a href="#-contributing">Contributing</a> •
@@ -133,14 +134,24 @@ short_videos/
 │   ├── pipigx.php / ppxia.php      # Pipigx / Pipixia
 │   ├── zuiyou.php                  # Zuiyou
 │   ├── sv.php                      # Aggregate parser (auto platform detection, dispatches to per-platform APIs)
+│   ├── parse.php                   # Aggregate parser for the web page (in-process calls, no self-request)
+│   ├── media.php                   # Media proxy / download forwarder (Referer, Range, pinned DNS)
+│   ├── health.php                  # Health check (domain reachability + last parse result)
+│   ├── lib/                        # Platform routing and unified JSON normalization for parse.php
 │   ├── wyy.py                      # NetEase Cloud Music (Python/Flask)
 │   └── svproxyurl.php              # 403 hotlink proxy
+├── index.html                      # Web parse page (vanilla, no build step, dark/light themes)
 ├── cf_sv_proxy/                    # 403 proxy (Cloudflare Workers edition, see README inside)
 ├── img/                            # Documentation assets
 ├── docs/                           # Specifications
 │   ├── 视频解析统一JSON格式3.0.md    #   Unified JSON format spec (Chinese)
 │   └── Unified-Video-Parsing-JSON-Format-3.0.md   #   Same spec (English)
+├── .github/                        # Issue/PR templates, CI (php -l, smoke test, link check)
 ├── README.md / README_EN.md        # Documentation
+├── CONTRIBUTING.md                 # Contribution guide
+├── SECURITY.md                     # Security policy
+├── CHANGELOG.md                    # Changelog
+├── .editorconfig / .gitattributes  # Editor and line-ending conventions
 └── LICENSE                         # MIT License
 ```
 
@@ -170,6 +181,97 @@ Deploy the whole directory to your web root (or any subdirectory). No configurat
 ### 3. Douyin Workers Edition (Optional)
 
 To run Douyin parsing on Cloudflare Workers, see [api/douyin-cloudflare workers/README.md](api/douyin-cloudflare%20workers/README.md) and deploy `workers.js`.
+
+---
+
+## 🖥 Web Parse Page
+
+`index.html` in the repo root is a ready-to-use parsing page. Pair it with `api/parse.php` and `api/media.php` and it works. Unlike `api/sv.php`, it makes **no HTTP self-request**: each platform parser is `include`d in the same process, so no site domain needs to be configured and it works under CLI, private networks and reverse proxies.
+
+| File | Purpose |
+|------|------|
+| `index.html` | Parse page (vanilla HTML/CSS/JS, no build step, dark / light themes) |
+| `api/parse.php` | Aggregate parse: detect platform → call the platform parser in-process → normalize to [Unified JSON Format 3.0](docs/Unified-Video-Parsing-JSON-Format-3.0.md) |
+| `api/health.php` | Health check: platform domain reachability + last real parse result |
+| `api/lib/PlatformRouter.php` | Platform detection, in-process include, public-URL validation, parse result recording |
+| `api/lib/Normalizer.php` | Platform-specific payloads → unified contract (Bilibili `auther`/`videos`, Weibo `time`, Toutiao `itemId`, etc.) |
+| `api/media.php` | Media proxy / download forwarder: injects the platform Referer to bypass 403, supports Range, pins DNS against rebinding |
+
+Drop the whole directory into your web root; the entry is `index.html`. PHP 8.0+ with curl and json extensions:
+
+```bash
+php -S 127.0.0.1:8099 -t .
+# open http://127.0.0.1:8099/
+```
+
+API calls:
+
+```bash
+# Aggregate parse (GET / POST / JSON body, full share text supported)
+curl "http://localhost:8099/api/parse.php?url=https://v.douyin.com/xxxx/"
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"url":"https://www.bilibili.com/video/BV1xx411c7mD"}' \
+     http://localhost:8099/api/parse.php
+
+# Media proxy (playback / download when the direct URL returns 403)
+curl -o out.mp4 "http://localhost:8099/api/media.php?url=<direct_url>&platform=douyin&download=1&name=title.mp4"
+```
+
+`api/parse.php` adds two fields beyond the unified contract — `platform` and `platform_label` — and keeps the platform status semantics (`200` success, `201` unsupported platform, `400/404/500` failure). The proxy allowlist lives in `$allowedSuffixes` at the top of `api/media.php`; an empty list means no domain restriction, but the public-IP check still applies.
+
+#### Themes
+
+Toggle dark / light from the icon in the top bar. The choice is stored in `localStorage` under `duanqie_theme_v1`; without a stored choice the page follows `prefers-color-scheme`. Both themes share one set of component styles and swap only CSS variables (`:root` vs `html[data-theme="light"]`). Body and secondary text meet WCAG AA (4.5:1) in both themes.
+
+#### Health check
+
+The page calls `api/health.php` on load and every 2 minutes (foreground tabs only). The top-bar pill shows how many platforms are available; each platform chip shows its own state:
+
+- **Green**: the platform domain is reachable *and* its last real parse succeeded
+- **Red**: the domain is unreachable (timeout / DNS failure / 5xx), or the last parse returned a non-200 code
+- **Grey**: not checked yet
+
+```bash
+# All platforms
+curl "http://localhost:8099/api/health.php"
+
+# Single platform (skips the 60-second cache)
+curl "http://localhost:8099/api/health.php?platform=douyin"
+```
+
+Response:
+
+```json
+{
+  "code": 200,
+  "msg": "ok",
+  "data": {
+    "service": "ok",
+    "missing": [],
+    "cached": false,
+    "checkedAt": "2026-11-07T06:12:17+08:00",
+    "summary": { "online": 9, "total": 11 },
+    "platforms": [
+      {
+        "platform": "douyin",
+        "label": "抖音",
+        "entry": true,
+        "online": true,
+        "latency": 2169,
+        "status": 404,
+        "reason": "",
+        "last": { "code": 403, "time": "2026-11-06T22:04:27+00:00", "ok": false }
+      }
+    ]
+  }
+}
+```
+
+`online` only means the platform domain completed a handshake — 4xx counts as reachable, since it proves the link is alive. `last` is the business code of the most recent real parse from `parse.php`. **Read them together**: platform-side anti-bot measures can keep the domain at 200 while parsing fails continuously, so `online` alone would report a false green. Results are cached for 60 seconds in the system temp directory; multi-instance deployments each keep their own.
+
+All 11 domain probes run concurrently through `curl_multi`, so a cold cache costs about as long as the slowest platform (measured 1.6–2.0 s) instead of scaling with the platform count. A single-platform probe (`?platform=`) is one standalone request and is not cached.
+
+`service: "degraded"` means an entry file is missing locally or curl is unavailable — see the `missing` array.
 
 ---
 
@@ -292,13 +394,20 @@ curl "https://your-server-domain/api/sv.php?url=https://v.douyin.com/xxxx/"
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev environment, code style and commit conventions; report security problems through the channels in [SECURITY.md](SECURITY.md).
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+3. Commit your changes, using Conventional Commits (`git commit -m 'feat(parse): add platform X'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+5. Open a Pull Request and fill in the verification steps in the template
+
+You can run the same checks CI runs before pushing:
+
+```bash
+find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+php .github/scripts/smoke-parse.php
+```
 
 ---
 
