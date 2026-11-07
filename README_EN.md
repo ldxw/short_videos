@@ -223,6 +223,17 @@ curl -o out.mp4 "http://localhost:8099/api/media.php?url=<direct_url>&platform=d
 
 Toggle dark / light from the icon in the top bar. The choice is stored in `localStorage` under `duanqie_theme_v1`; without a stored choice the page follows `prefers-color-scheme`. Both themes share one set of component styles and swap only CSS variables (`:root` vs `html[data-theme="light"]`). Body and secondary text meet WCAG AA (4.5:1) in both themes.
 
+#### Parse progress
+
+Hitting "Parse" reveals a progress bar under the input card: the current stage on the left, the percentage on the right.
+
+- The fill follows an asymptotic curve (about 46% at 6 s, 70% at 12 s, and it parks at 93% after 40 s) so it never races to 100% and then stalls, nor pretends the work is done
+- Stage text advances with elapsed time: connecting → fetching work info → extracting media → assembling links and metadata → upstream is slow, still working → large work, please hold
+- Success fills to 100% and reads "Parse complete"; failure stays at the current value in red and reads "Parse incomplete" — it neither rewinds nor completes
+- The bar fades out 0.6–0.9 s after settling and the next run restarts from 0%
+
+It carries `role="progressbar"` with a live `aria-valuenow`; under `prefers-reduced-motion` the shimmer stops and the width transition shortens.
+
 #### Health check
 
 The page calls `api/health.php` on load and every 2 minutes (foreground tabs only). The top-bar pill shows how many platforms are available; each platform chip shows its own state:
